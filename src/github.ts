@@ -16,6 +16,7 @@ export class GitHubClient {
         Authorization: `Bearer ${this.token}`,
         Accept: "application/vnd.github+json",
         "X-GitHub-Api-Version": "2022-11-28",
+        "User-Agent": "github-team-assigner",
         "Content-Type": "application/json",
         ...options?.headers,
       },
