@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import { GitHubClient } from "./github";
-import { type Env, ORG, TEAM_CONFIG } from "./types";
+import { type Env, parseTeamConfig } from "./types";
 import { verifyWebhookSignature } from "./webhook";
 
 const app = new Hono<{ Bindings: Env }>();
@@ -44,6 +44,19 @@ app.post("/webhook", async (c) => {
     return c.json({ status: "ignored", action: payload.action });
   }
 
+  const org = c.env.GITHUB_ORG;
+  const teams = parseTeamConfig(c.env.TEAM_CONFIG);
+
+  if (!org) {
+    console.error("GITHUB_ORG is not configured");
+    return c.json({ error: "GITHUB_ORG not configured" }, 500);
+  }
+
+  if (teams.length === 0) {
+    console.error("TEAM_CONFIG is empty or invalid");
+    return c.json({ error: "TEAM_CONFIG not configured" }, 500);
+  }
+
   const { repository, sender } = payload;
   const repoName = repository.name;
   const creator = sender.login;
@@ -55,7 +68,7 @@ app.post("/webhook", async (c) => {
   // 作成者のチーム所属を確認
   let userTeams: string[];
   try {
-    userTeams = await github.getUserTeamsInOrg(ORG, creator);
+    userTeams = await github.getUserTeamsInOrg(org, creator);
     console.log(`${creator} belongs to teams: ${userTeams.join(", ") || "none"}`);
   } catch (e) {
     console.error("Failed to get user teams:", e);
@@ -66,20 +79,20 @@ app.post("/webhook", async (c) => {
     [];
 
   // チームを付与
-  for (const [teamKey, config] of Object.entries(TEAM_CONFIG)) {
+  for (const config of teams) {
     if (!userTeams.includes(config.slug)) {
-      results.push({ team: teamKey, status: "skipped" });
+      results.push({ team: config.slug, status: "skipped" });
       continue;
     }
 
     try {
-      await github.addTeamToRepo(ORG, config.slug, repoName, config.permission);
+      await github.addTeamToRepo(org, config.slug, repoName, config.permission);
       console.log(`Added team ${config.slug} to ${repoName} with ${config.permission} permission`);
-      results.push({ team: teamKey, status: "added" });
+      results.push({ team: config.slug, status: "added" });
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       console.error(`Failed to add team ${config.slug} to ${repoName}:`, e);
-      results.push({ team: teamKey, status: "error", error: msg });
+      results.push({ team: config.slug, status: "error", error: msg });
     }
   }
 
