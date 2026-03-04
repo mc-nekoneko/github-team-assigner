@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import { GitHubClient } from "./github";
-import { type Env, parseTeamConfig } from "./types";
+import { type Env, matchesPattern, type Permission, parseRules } from "./types";
 import { verifyWebhookSignature } from "./webhook";
 
 const app = new Hono<{ Bindings: Env }>();
@@ -45,14 +45,14 @@ app.post("/webhook", async (c) => {
   }
 
   const org = c.env.GITHUB_ORG;
-  const teams = parseTeamConfig(c.env.TEAM_CONFIG);
+  const rules = parseRules(c.env.TEAM_CONFIG);
 
   if (!org) {
     console.error("GITHUB_ORG is not configured");
     return c.json({ error: "GITHUB_ORG not configured" }, 500);
   }
 
-  if (teams.length === 0) {
+  if (rules.length === 0) {
     console.error("TEAM_CONFIG is empty or invalid");
     return c.json({ error: "TEAM_CONFIG not configured" }, 500);
   }
@@ -65,34 +65,60 @@ app.post("/webhook", async (c) => {
 
   const github = new GitHubClient(c.env.GITHUB_TOKEN);
 
-  // 作成者のチーム所属を確認
-  let userTeams: string[];
-  try {
-    userTeams = await github.getUserTeamsInOrg(org, creator);
-    console.log(`${creator} belongs to teams: ${userTeams.join(", ") || "none"}`);
-  } catch (e) {
-    console.error("Failed to get user teams:", e);
-    return c.json({ error: "Failed to fetch team membership" }, 500);
+  // memberOf 条件があるルールが1つでもあればチームメンバーシップを取得する
+  const needsMemberCheck = rules.some((r) => r.if.memberOf !== undefined);
+  let userTeams: string[] = [];
+
+  if (needsMemberCheck) {
+    try {
+      userTeams = await github.getUserTeamsInOrg(org, creator);
+      console.log(`${creator} belongs to teams: ${userTeams.join(", ") || "none"}`);
+    } catch (e) {
+      // Bot など org メンバー以外の場合は空配列として扱い処理を続行
+      console.warn(
+        `Could not fetch team membership for ${creator} (may be a bot or external user):`,
+        e,
+      );
+    }
   }
 
-  const results: Array<{ team: string; status: "added" | "skipped" | "error"; error?: string }> =
-    [];
+  // ルールを評価してチーム付与の一覧を構築（同一チームは後のルールで上書き）
+  const assignmentsMap = new Map<string, Permission>();
 
-  // チームを付与
-  for (const config of teams) {
-    if (!userTeams.includes(config.slug)) {
-      results.push({ team: config.slug, status: "skipped" });
-      continue;
+  for (const rule of rules) {
+    let matches = false;
+
+    if (rule.if.creatorIs !== undefined) {
+      matches = matchesPattern(creator, rule.if.creatorIs);
+    } else if (rule.if.memberOf !== undefined) {
+      matches = userTeams.includes(rule.if.memberOf);
     }
 
+    if (matches) {
+      console.log(`Rule matched for ${creator}:`, rule.if);
+      for (const assignment of rule.assign) {
+        assignmentsMap.set(assignment.slug, assignment.permission);
+      }
+    }
+  }
+
+  if (assignmentsMap.size === 0) {
+    console.log(`No matching rules for ${creator}, skipping team assignment`);
+    return c.json({ status: "ok", repo: repository.full_name, creator, teams: [] });
+  }
+
+  // マッチしたチームを付与
+  const results: Array<{ team: string; status: "added" | "error"; error?: string }> = [];
+
+  for (const [slug, permission] of assignmentsMap) {
     try {
-      await github.addTeamToRepo(org, config.slug, repoName, config.permission);
-      console.log(`Added team ${config.slug} to ${repoName} with ${config.permission} permission`);
-      results.push({ team: config.slug, status: "added" });
+      await github.addTeamToRepo(org, slug, repoName, permission);
+      console.log(`Added team ${slug} to ${repoName} with ${permission} permission`);
+      results.push({ team: slug, status: "added" });
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
-      console.error(`Failed to add team ${config.slug} to ${repoName}:`, e);
-      results.push({ team: config.slug, status: "error", error: msg });
+      console.error(`Failed to add team ${slug} to ${repoName}:`, e);
+      results.push({ team: slug, status: "error", error: msg });
     }
   }
 
