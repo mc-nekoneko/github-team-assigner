@@ -1,0 +1,17 @@
+# ローカル開発用の環境変数サンプル
+# このファイルを .dev.vars にコピーして各値を設定してください
+# .dev.vars は .gitignore に含まれているためコミットされません
+
+# GitHub PAT (admin:org + repo スコープ)
+GITHUB_TOKEN=github_pat_xxxxxxxxxxxx
+
+# Webhook 署名検証用シークレット (任意のランダム文字列)
+GITHUB_WEBHOOK_SECRET=your_webhook_secret_here
+
+# 対象の GitHub Organization 名
+GITHUB_ORG=YOUR_ORG_NAME
+
+# チーム付与ルール (JSON 配列)
+# creatorIs: ユーザー名一致 (ワイルドカード * 対応)
+# memberOf:  チームメンバーシップで判定
+TEAM_CONFIG=[{"if":{"creatorIs":"figma[bot]"},"assign":[{"slug":"designer","permission":"push"}]},{"if":{"memberOf":"designer"},"assign":[{"slug":"designer","permission":"push"}]},{"if":{"memberOf":"system"},"assign":[{"slug":"system","permission":"push"}]}]
