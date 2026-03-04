@@ -5,4 +5,13 @@
   "observability": {
     "enabled": true,
   },
+  // 変数はここに設定するか、Cloudflare ダッシュボードで設定する
+  // シークレット (GITHUB_TOKEN, GITHUB_WEBHOOK_SECRET) は wrangler secret put で設定すること
+  "vars": {
+    "GITHUB_ORG": "YOUR_ORG_NAME",
+    // TEAM_CONFIG: ルールベースのチーム付与設定 (JSON 配列)
+    // creatorIs: ユーザー名一致 (ワイルドカード * 対応)
+    // memberOf:  チームメンバーシップで判定
+    "TEAM_CONFIG": "[{\"if\":{\"creatorIs\":\"figma[bot]\"},\"assign\":[{\"slug\":\"designer\",\"permission\":\"push\"}]},{\"if\":{\"memberOf\":\"designer\"},\"assign\":[{\"slug\":\"designer\",\"permission\":\"push\"}]},{\"if\":{\"memberOf\":\"system\"},\"assign\":[{\"slug\":\"system\",\"permission\":\"push\"}]}]",
+  },
 }
