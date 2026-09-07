@@ -14,7 +14,7 @@
     "@biomejs/biome": "^2.5.12",
     "@cloudflare/workers-types": "^4.20260628.1",
     "typescript": "^6.0.3",
-    "vitest": "^4.1.11",
+    "vitest": "^5.0.0",
     "wrangler": "^4.107.0"
   },
   "dependencies": {
